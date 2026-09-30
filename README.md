@@ -10,6 +10,7 @@ AstrBot 插件，用于接收 GitHub 事件（push、issues、pull requests 等�
 - ✅ 支持 Push 事件（代码提交）
 - ✅ 支持 Issues 事件（问题追踪）
 - ✅ 支持 Pull Request 事件（代码合并）
+- ✅ 支持 Stars 事件（点星、取消星标）
 - ✅ 实时转发到指定的聊天平台群组/用户
 - ✅ 自定义端口号配置
 - ✅ 简洁的消息格式，包含关键信息
@@ -71,7 +72,7 @@ sudo systemctl restart astrbot
 2. **Payload URL**: `http://你的服务器IP:8080/webhook`
 3. **Content type**: `application/json`
 4. **Secret** (可选): 配置 Webhook 密钥用于签名验证
-5. **Events**: 选择需要触发的事件（建议勾选 Pushes, Issues, Pull requests）
+5. **Events**: 选择需要触发的事件（Pushes、Issues、Pull requests、Stars）；点星通知勾选 **Stars** 即可，插件不处理 Watches，避免同一次点星重复通知。
 6. **Active**: ✅ 勾选
 7. 点击 "Add webhook"
 

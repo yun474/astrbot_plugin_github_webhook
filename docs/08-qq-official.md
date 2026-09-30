@@ -53,5 +53,27 @@ v4.27.5 尚未包含此实现，v4.28.0 已包含。仅有 `MessageChain.use_mar
 
 Push 显示提交总数，最多展开 5 条，每条取首行并限制长度。
 Issue 和 PR 提供标题链接；PR 已合并时显示“已合并”。
+Star 显示操作人、仓库、事件发生时的 Star 总数和仓库链接，支持点星与取消星标。
 标题、分支名等动态内容会转义 Markdown，避免意外破坏排版。
 选择“LLM 改写”后会要求模型保留 Markdown、事实和链接。`llm_timeout_fallback_md` 开启时，超时会回退原始 Markdown 模板；关闭时不发送该条。鉴权失败、空内容等非超时错误不会自动回退。艾特标签始终在生成之后由插件拼接。
+
+### Star 通知
+
+在 GitHub Webhook 中勾选 **Stars** 并保存。自己给该仓库点星也会触发；已经点过星时，可以取消后重新点星测试，这会产生两条通知。
+插件只处理 `star` 的 `created` / `deleted`，不处理 `watch`，同时勾选 Stars 和 Watches 也不会重复推送。
+
+Markdown 示例（配置了艾特时，插件会在标题前添加艾特标签）：
+
+```markdown
+# ⭐ 收到新的 Star
+
+**yun474** 点亮了星标
+
+**仓库**：owner/repository
+
+**当前 Star**：42
+
+[查看仓库 →](https://github.com/owner/repository)
+```
+
+取消时标题为“💫 有人取消了 Star”，正文改为“取消了星标”。数量直接使用事件中的 `stargazers_count`，不额外请求 GitHub API。三种推送模式、LLM 超时回退和艾特设置均沿用现有配置。

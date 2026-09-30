@@ -9,7 +9,7 @@ from .src.core.plugin import GitHubWebhookPlugin
     "astrbot_plugin_github_webhook",
     "TatsukiMeng, yun474",
     "GitHub Webhook 通知，支持 QQ 官方机器人 Markdown 推送",
-    "0.5.0",
+    "0.5.1",
 )
 class PluginEntry(Star):
     """Manage the webhook receiver with the AstrBot plugin lifecycle."""

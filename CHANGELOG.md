@@ -5,6 +5,10 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [0.5.1] - 2026-10-01
+
+- 新增点星与取消星标通知，Markdown 展示操作人、仓库、Star 数量和链接，沿用艾特及 LLM 改写设置。
+
 ## [0.5.0] - 2026-10-01
 
 - 新增 QQ 官方机器人 Markdown 推送，支持配置 OpenID，由插件统一拼接开头的艾特标签。

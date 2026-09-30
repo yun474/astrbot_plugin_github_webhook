@@ -17,6 +17,7 @@ from packaging.version import Version
 from ..handlers.issues_handler import handle_issues_event
 from ..handlers.pull_request_handler import handle_pull_request_event
 from ..handlers.push_handler import handle_push_event
+from ..handlers.star_handler import handle_star_event
 from ..services.llm_service import generate_message
 from ..utils.rate_limiter import RateLimiter
 from ..utils.verify_signature import verify_signature
@@ -106,6 +107,7 @@ class GitHubWebhookPlugin:
             "push": handle_push_event,
             "issues": handle_issues_event,
             "pull_request": handle_pull_request_event,
+            "star": handle_star_event,
         }
         if event_type not in handlers:
             return web.Response(status=204)
