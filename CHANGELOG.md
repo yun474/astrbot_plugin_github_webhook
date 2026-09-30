@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 规范。
 
+## [0.5.0] - 2026-10-01
+
+- 新增 QQ 官方机器人 Markdown 推送，支持配置 OpenID，由插件统一拼接开头的艾特标签。
+- 原生文本、Markdown 推送、LLM 改写改为三个互斥选项；新增 LLM 超时回退 Markdown 开关。
+- 完善 Webhook 签名校验、异步队列与投递去重，修复多提交展示及 PR 合并状态等问题。
+
 ## [0.4.1] - 2026-02-06
 
 ### 修复
