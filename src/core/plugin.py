@@ -1,152 +1,223 @@
-"""GitHub Webhook Plugin core implementation."""
+"""Receive GitHub events and deliver notifications through AstrBot."""
 
+import asyncio
 import json
+import time
+from collections import OrderedDict
+from contextlib import suppress
+
 from aiohttp import web
-
-from astrbot.api import all as api
-from astrbot.api.message_components import Plain
-from astrbot.api.star import Context, Star
 from astrbot.api import logger
+from astrbot.api.event import MessageChain
+from astrbot.api.message_components import Plain
+from astrbot.api.star import Context
+from astrbot.core.config.default import VERSION
+from packaging.version import Version
 
-from .config import PluginConfig
-from .constants import DEFAULT_PORT
 from ..handlers.issues_handler import handle_issues_event
 from ..handlers.pull_request_handler import handle_pull_request_event
 from ..handlers.push_handler import handle_push_event
+from ..services.llm_service import generate_message
 from ..utils.rate_limiter import RateLimiter
 from ..utils.verify_signature import verify_signature
+from .config import PluginConfig
 
 
-class GitHubWebhookPlugin(Star):
-    """GitHub Webhook receiver plugin."""
+class GitHubWebhookPlugin:
+    """Keep slow model and platform requests outside the HTTP response path."""
 
     def __init__(self, context: Context, config):
-        super().__init__(context)
+        self.context = context
+        self.cfg = PluginConfig(config)
         self.app = web.Application()
         self.app.router.add_post("/webhook", self.handle_webhook)
+        self.app.cleanup_ctx.append(self._worker_lifecycle)
         self.runner = None
         self.site = None
-        self.cfg = PluginConfig(config)
+        self.queue = asyncio.Queue(maxsize=100)
+        self.pending_deliveries = set()
+        self.completed_deliveries = OrderedDict()
+        self.accepting = False
+        self.shutdown_timeout = 10
+        self.supports_qq_markdown = Version(VERSION) >= Version("4.28.0")
+        self.rate_limiter = (
+            RateLimiter(self.cfg.rate_limit) if self.cfg.rate_limit else None
+        )
 
-        if self.cfg.rate_limit > 0:
-            self.rate_limiter = RateLimiter(max_requests=self.cfg.rate_limit)
-        else:
-            self.rate_limiter = None
+    async def _worker_lifecycle(self, app):
+        worker = asyncio.create_task(self._process_queue())
+        self.accepting = True
+        try:
+            yield
+        finally:
+            self.accepting = False
+            try:
+                await asyncio.wait_for(self.queue.join(), self.shutdown_timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "GitHub Webhook: shutdown timed out; unfinished notifications "
+                    "must be redelivered from GitHub"
+                )
+            finally:
+                worker.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker
+                while not self.queue.empty():
+                    delivery_id, _, _, _ = self.queue.get_nowait()
+                    logger.warning(
+                        f"GitHub Webhook: unsent on shutdown, id={delivery_id or '(none)'}"
+                    )
+                    self.pending_deliveries.discard(delivery_id)
+                    self.queue.task_done()
 
     async def start_server(self):
-        # Clean up any existing server instance
-        if self.site:
-            await self.site.stop()
-            logger.info("GitHub Webhook: Cleaned up existing server instance")
-        if self.runner:
-            await self.runner.cleanup()
-            logger.info("GitHub Webhook: Cleaned up existing runner")
-
+        if self.runner is not None:
+            return
         self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-        self.site = web.TCPSite(self.runner, "0.0.0.0", self.cfg.port)
-        await self.site.start()
-        logger.info(f"GitHub Webhook: Server started on port {self.cfg.port}")
+        try:
+            await self.runner.setup()
+            self.site = web.TCPSite(self.runner, "0.0.0.0", self.cfg.port)
+            await self.site.start()
+        except Exception:
+            await self.runner.cleanup()
+            self.runner = None
+            self.site = None
+            raise
+        logger.info(f"GitHub Webhook: listening on port {self.cfg.port}")
 
     async def handle_webhook(self, request: web.Request):
-        event_type = request.headers.get("X-GitHub-Event", "unknown")
+        payload = await request.read()
         signature = request.headers.get("X-Hub-Signature-256", "")
-
-        # Rate limiting check
-        if self.rate_limiter:
-            is_allowed, retry_after = await self.rate_limiter.is_allowed()
-            if not is_allowed:
-                current, max_req = self.rate_limiter.get_usage()
-                logger.warning(
-                    f"GitHub Webhook: Rate limit exceeded "
-                    f"({current}/{max_req} requests/minute)"
-                )
-                return web.Response(
-                    status=429,
-                    text=f"Rate limit exceeded. Retry after {retry_after} seconds.",
-                    headers={
-                        "Retry-After": str(retry_after),
-                        "X-RateLimit-Limit": str(max_req),
-                        "X-RateLimit-Remaining": str(max_req - current),
-                        "X-RateLimit-Reset": str(retry_after),
-                    },
-                )
-
-        # Read payload
+        if self.cfg.webhook_secret and not verify_signature(
+            payload, signature, self.cfg.webhook_secret
+        ):
+            return web.Response(status=401, text="Invalid or missing signature")
         try:
-            payload_bytes = await request.read()
-            data = json.loads(payload_bytes.decode("utf-8"))
-        except json.JSONDecodeError as e:
-            logger.error(f"GitHub Webhook: Failed to parse JSON: {e}")
+            data = json.loads(payload)
+        except (ValueError, UnicodeDecodeError):
             return web.Response(status=400, text="Invalid JSON")
-        except Exception as e:
-            logger.error(f"GitHub Webhook: Failed to read request body: {e}")
-            return web.Response(status=400, text="Failed to read request")
+        if not isinstance(data, dict):
+            return web.Response(status=400, text="Expected a JSON object")
 
-        # Signature verification
-        if self.cfg.webhook_secret and signature:
-            if not verify_signature(payload_bytes, signature, self.cfg.webhook_secret):
-                logger.warning("GitHub Webhook: Invalid signature - request rejected")
-                return web.Response(status=401, text="Invalid signature")
-
-        logger.info(f"GitHub Webhook: Received event type: {event_type}")
-
+        event_type = request.headers.get("X-GitHub-Event", "unknown")
         if event_type == "ping":
             return web.Response(text="Pong")
+        handlers = {
+            "push": handle_push_event,
+            "issues": handle_issues_event,
+            "pull_request": handle_pull_request_event,
+        }
+        if event_type not in handlers:
+            return web.Response(status=204)
+        if not self.accepting or not self.cfg.target_umo:
+            return web.Response(status=503, text="Receiver is not ready")
 
-        message = None
-
-        try:
-            if event_type == "push":
-                message = await handle_push_event(data, self.context)
-            elif event_type == "issues":
-                message = await handle_issues_event(data, self.context)
-            elif event_type == "pull_request":
-                message = await handle_pull_request_event(data, self.context)
-            else:
-                logger.info(f"GitHub Webhook: Event type '{event_type}' not handled")
-        except Exception as e:
-            logger.error(f"GitHub Webhook: Error processing event: {e}", exc_info=True)
-            return web.Response(status=500, text="Internal server error")
-
-        if message:
-            if self.cfg.enable_agent:
-                from ..services.llm_service import send_with_agent
-
-                await send_with_agent(self, message, data, event_type)
-            else:
-                await self.send_message(message)
-
-        return web.Response(status=200, text="OK")
-
-    async def send_message(self, message: str):
-        if not self.cfg.target_umo:
-            logger.error(
-                "GitHub Webhook: Cannot send message - target_umo not configured"
+        platform_id = self.cfg.target_umo.split(":", 1)[0]
+        platform = self.context.get_platform_inst(platform_id)
+        if platform is None:
+            return web.Response(status=503, text="Target platform is unavailable")
+        markdown = self.cfg.push_mode != "原生文本" and platform.meta().name in {
+            "qq_official",
+            "qq_official_webhook",
+        }
+        if markdown and not self.supports_qq_markdown:
+            return web.Response(
+                status=503,
+                text="QQ proactive Markdown requires AstrBot >= 4.28.0; "
+                "upgrade AstrBot or select native text mode",
             )
-            return
-
         try:
-            message_chain = api.MessageChain([Plain(message)])
-            result = await self.context.send_message(self.cfg.target_umo, message_chain)
-            logger.info(
-                f"GitHub Webhook: Message sent to {self.cfg.target_umo}, result: {result}"
-            )
-            if not result:
-                logger.warning(
-                    f"GitHub Webhook: Platform not found for {self.cfg.target_umo}"
+            message = await handlers[event_type](data, self.context, markdown=markdown)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return web.Response(status=400, text="Invalid event payload")
+        if not message:
+            return web.Response(status=204)
+
+        delivery_id = request.headers.get("X-GitHub-Delivery", "")
+        now = time.monotonic()
+        while self.completed_deliveries:
+            oldest_id, completed_at = next(iter(self.completed_deliveries.items()))
+            if now - completed_at < 3600:
+                break
+            del self.completed_deliveries[oldest_id]
+        if delivery_id and (
+            delivery_id in self.pending_deliveries
+            or delivery_id in self.completed_deliveries
+        ):
+            return web.Response(text="Already accepted")
+        if self.queue.full():
+            return web.Response(status=503, text="Notification queue is full")
+        if self.rate_limiter:
+            allowed, retry_after = await self.rate_limiter.is_allowed()
+            if not allowed:
+                return web.Response(
+                    status=429,
+                    text="Rate limit exceeded",
+                    headers={"Retry-After": str(retry_after)},
                 )
-        except Exception as e:
-            # 记录完整错误信息但不传播异常
-            logger.error(f"GitHub Webhook: Failed to send message: {e}")
-            logger.error(f"GitHub Webhook: Error type: {type(e).__name__}")
-            logger.error(f"GitHub Webhook: Error details: {str(e)}")
+        try:
+            self.queue.put_nowait((delivery_id, event_type, message, markdown))
+        except asyncio.QueueFull:
+            return web.Response(status=503, text="Notification queue is full")
+        if delivery_id:
+            self.pending_deliveries.add(delivery_id)
+        return web.Response(status=202, text="Accepted for background delivery")
+
+    async def _process_queue(self):
+        while True:
+            delivery_id, event_type, message, markdown = await self.queue.get()
+            try:
+                if self.cfg.push_mode == "LLM 改写":
+                    try:
+                        message = await asyncio.wait_for(
+                            generate_message(self, message, markdown),
+                            timeout=self.cfg.agent_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        if not self.cfg.llm_timeout_fallback_md:
+                            raise
+                        logger.warning(
+                            "GitHub Webhook: LLM timed out; sending the event template"
+                        )
+                await self.send_message(message, markdown)
+                if delivery_id:
+                    self.completed_deliveries[delivery_id] = time.monotonic()
+                    while len(self.completed_deliveries) > 1024:
+                        self.completed_deliveries.popitem(last=False)
+                logger.info(
+                    f"GitHub Webhook: delivered {event_type}, id={delivery_id or '(none)'}"
+                )
+            except asyncio.CancelledError:
+                logger.warning(
+                    f"GitHub Webhook: interrupted delivery, id={delivery_id or '(none)'}"
+                )
+                raise
+            except Exception:
+                logger.exception(
+                    f"GitHub Webhook: delivery failed, id={delivery_id or '(none)'}. "
+                    "Redeliver this event from GitHub after fixing the error."
+                )
+            finally:
+                self.pending_deliveries.discard(delivery_id)
+                self.queue.task_done()
+
+    async def send_message(self, message: str, markdown: bool = False):
+        if markdown and self.cfg.qq_mention_openid:
+            message = (
+                f'<qqbot-at-user id="{self.cfg.qq_mention_openid}" />\n\n{message}'
+            )
+        chain = MessageChain([Plain(message)])
+        if hasattr(chain, "use_markdown"):
+            chain.use_markdown(markdown)
+        result = await asyncio.wait_for(
+            self.context.send_message(self.cfg.target_umo, chain), timeout=20
+        )
+        if not result:
+            raise RuntimeError("Target platform was not found while sending")
 
     async def terminate(self):
-        logger.info("GitHub Webhook: Shutting down server...")
-        if self.site:
-            await self.site.stop()
-            logger.info("GitHub Webhook: Server stopped")
+        self.accepting = False
         if self.runner:
             await self.runner.cleanup()
-            logger.info("GitHub Webhook: Runner cleaned up")
+            self.runner = None
+            self.site = None

@@ -38,3 +38,6 @@ Thumbs.db
 .venv
 venv/
 ENV/
+.pytest_cache/
+.ruff_cache/
+data/

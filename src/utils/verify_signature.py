@@ -1,7 +1,7 @@
 """Webhook signature verification utilities."""
 
-import hmac
 import hashlib
+import hmac
 
 
 def verify_signature(

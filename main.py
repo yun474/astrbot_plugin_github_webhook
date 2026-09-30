@@ -1,44 +1,25 @@
-"""AstrBot GitHub Webhook Plugin - Entry point."""
+"""AstrBot GitHub Webhook plugin entry point."""
 
-import asyncio
-import json
-import sys
-from pathlib import Path
-
-from aiohttp import web
-
-from astrbot.api import AstrBotConfig, logger
-from astrbot.api import all as api
-from astrbot.api.message_components import Plain
 from astrbot.api.star import Context, Star, register
 
-# 将 src/ 添加到 sys.path，使 Python 能找到模块
-sys.path.insert(0, str(Path(__file__).parent))
-
-from src.core.plugin import GitHubWebhookPlugin
+from .src.core.plugin import GitHubWebhookPlugin
 
 
 @register(
     "astrbot_plugin_github_webhook",
-    "TatsukiMengChen",
-    "GitHub Webhook 集成插件 - 接收 GitHub 事件并转发到聊天平台",
+    "TatsukiMeng, yun474",
+    "GitHub Webhook 通知，支持 QQ 官方机器人 Markdown 推送",
     "0.4.0",
 )
 class PluginEntry(Star):
-    """插件入口类，代理到实际的 GitHubWebhookPlugin 类"""
+    """Manage the webhook receiver with the AstrBot plugin lifecycle."""
 
     def __init__(self, context: Context, config):
-        """初始化插件 - 将调用传递给实际的插件类"""
+        super().__init__(context)
         self._plugin = GitHubWebhookPlugin(context, config)
 
     async def initialize(self):
-        """插件初始化"""
         await self._plugin.start_server()
 
-    async def handle_webhook(self, request):
-        """处理 webhook 请求"""
-        return await self._plugin.handle_webhook(request)
-
     async def terminate(self):
-        """插件销毁"""
         await self._plugin.terminate()

@@ -4,6 +4,8 @@ AstrBot 插件，用于接收 GitHub 事件（push、issues、pull requests 等�
 
 ## 功能特性
 
+- ✅ QQ 官方机器人原生 Markdown 推送（群聊、私聊）
+- ✅ 后台通知队列、签名校验、重复投递去重
 - ✅ 接收 GitHub Webhook 事件
 - ✅ 支持 Push 事件（代码提交）
 - ✅ 支持 Issues 事件（问题追踪）
@@ -24,7 +26,7 @@ AstrBot 插件，用于接收 GitHub 事件（push、issues、pull requests 等�
 
 ```bash
 cd AstrBot/data/plugins
-git clone https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook.git
+git clone https://github.com/yun474/astrbot_plugin_github_webhook.git
 cd astrbot_plugin_github_webhook
 pip install -r requirements.txt
 ```
@@ -41,7 +43,9 @@ pip install -r requirements.txt
   "target_umo": "platform_id:GroupMessage:群号",
   "webhook_secret": "your_github_webhook_secret",
   "rate_limit": 10,
-  "enable_agent": true,
+  "push_mode": "Markdown 推送",
+  "qq_mention_openid": "",
+  "llm_timeout_fallback_md": true,
   "llm_provider_id": "",
   "agent_timeout": 60,
   "agent_system_prompt": ""
@@ -70,6 +74,16 @@ sudo systemctl restart astrbot
 5. **Events**: 选择需要触发的事件（建议勾选 Pushes, Issues, Pull requests）
 6. **Active**: ✅ 勾选
 7. 点击 "Add webhook"
+
+## QQ 官方 Markdown 推送
+
+推送模式单选：**原生文本 / Markdown 推送 / LLM 改写**。LLM 超时是否回退 Markdown 由独立开关控制。
+
+QQ 官方主动 Markdown 需要 **AstrBot >= 4.28.0**。开启群聊主动发言，并使用完整 UMO；QQ 官方会话使用 OpenID，不是普通 QQ 号或群号。
+
+需要通知时艾特某人，可在 `qq_mention_openid` 填写用户 OpenID；插件自动在 Markdown 开头拼接完整标签，留空则不艾特。
+
+详见 [QQ 官方配置与投递说明](docs/08-qq-official.md)。接收成功返回 HTTP 202，表示事件入队；发送结果请查看日志。
 
 ## 文档
 
@@ -138,7 +152,9 @@ astrbot_plugin_github_webhook/
 
 ## 作者
 
-TatsukiMengChen
+原作者：[TatsukiMeng（TatsukiMengChen）](https://github.com/TatsukiMeng)
+
+Fork 维护：[yun474](https://github.com/yun474)
 
 ## 致谢
 
@@ -150,3 +166,14 @@ TatsukiMengChen
 - [AstrBot 文档](https://docs.astrbot.net)
 - [AstrBot 插件开发指南](https://docs.astrbot.net/dev/star/introduction)
 - [GitHub Webhooks 文档](https://docs.github.com/en/developers/webhooks-and-events/webhooks)
+
+## 本地验证
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+ruff check .
+ruff format --check .
+```
+
+测试使用真实 AstrBot SDK，并拦截外部模型和 QQ API 调用；不会向真实群聊发消息。

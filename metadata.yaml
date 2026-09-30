@@ -1,9 +1,9 @@
 name: astrbot_plugin_github_webhook
 display_name: GitHub Webhook 插件
-author: TatsukiMeng
+author: TatsukiMeng, yun474
 version: 0.4.0
-description: 将 GitHub 事件（push、issue、PR 等）转发到聊天平台的插件
-repo: https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook
+description: 将 GitHub 事件转发到聊天平台，支持 QQ 官方机器人 Markdown 推送
+repo: https://github.com/yun474/astrbot_plugin_github_webhook
 license: MIT
 tags:
   - Github

@@ -1,7 +1,7 @@
 """Rate limiter for webhook requests."""
 
-import time
 import asyncio
+import time
 from collections import deque
 
 
@@ -33,7 +33,7 @@ class RateLimiter:
         if self.max_requests <= 0:
             return True, 0
 
-        current_time = time.time()
+        current_time = time.monotonic()
 
         async with self._lock:
             # Remove timestamps outside the window
@@ -59,7 +59,7 @@ class RateLimiter:
         Returns:
             Tuple of (current_requests, max_requests)
         """
-        current_time = time.time()
+        current_time = time.monotonic()
 
         # Remove timestamps outside the window
         while self.requests and self.requests[0] < current_time - self.window_seconds:

@@ -14,7 +14,7 @@
 
 ```bash
 cd AstrBot/data/plugins
-git clone https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook.git
+git clone https://github.com/yun474/astrbot_plugin_github_webhook.git
 ```
 
 ### 2. 安装依赖
@@ -41,7 +41,8 @@ uv pip install -r requirements.txt
   "port": 8080,
   "target_umo": "platform_id:GroupMessage:群号",
   "webhook_secret": "your_github_webhook_secret",
-  "rate_limit": 10
+  "rate_limit": 10,
+  "push_mode": "Markdown 推送"
 }
 ```
 

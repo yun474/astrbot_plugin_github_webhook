@@ -10,7 +10,24 @@
     "type": "string",
     "default": "",
     "obvious_hint": true,
-    "hint": "接收 GitHub 事件消息的群组或用户 UMO（用户/群组唯一标识符）。在消息事件中可以通过 event.session_id 获取。所有 GitHub 事件都会发送到此目标。"
+    "hint": "填写 event.unified_msg_origin 的完整值。QQ 官方群聊使用平台实例 ID:GroupMessage:group_openid，不能填写普通群号。所有事件发往此会话。"
+  },
+  "push_mode": {
+    "description": "推送模式",
+    "type": "string",
+    "options": [
+      "原生文本",
+      "Markdown 推送",
+      "LLM 改写"
+    ],
+    "default": "Markdown 推送",
+    "hint": "三个模式互斥：原生文本直接发送事件摘要；Markdown 使用结构化模板；LLM 先改写再发送。QQ 官方的 Markdown 和 LLM 模式使用原生 Markdown，需 AstrBot >= 4.28.0。"
+  },
+  "qq_mention_openid": {
+    "description": "Markdown 开头艾特的用户 OpenID",
+    "type": "string",
+    "default": "",
+    "hint": "只填写用户 OpenID，不要填普通 QQ 号或完整标签。插件会在 QQ 官方 Markdown 通知最前面生成 <qqbot-at-user id=\"OpenID\" />。留空不艾特；LLM 改写后也会保留。"
   },
   "webhook_secret": {
     "description": "Webhook Secret（可选）",
@@ -29,11 +46,11 @@
     "default": 10,
     "hint": "每分钟允许的最大请求数。设置为 0 表示不限制。"
   },
-  "enable_agent": {
-    "description": "启用 LLM 生成消息",
+  "llm_timeout_fallback_md": {
+    "description": "LLM 超时回退 Markdown",
     "type": "bool",
-    "default": false,
-    "hint": "是否使用 LLM 生成个性化的 GitHub 事件消息。启用后，LLM 会根据 GitHub 事件内容生成消息"
+    "default": true,
+    "hint": "仅在 LLM 改写模式超时时生效。开启后发送原始 Markdown 模板；关闭后记录失败、不发送该条通知。其他模型错误不会自动回退。非 QQ 官方平台使用普通文本模板。"
   },
   "llm_provider_id": {
     "description": "LLM 提供商",

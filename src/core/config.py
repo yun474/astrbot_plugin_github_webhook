@@ -1,99 +1,42 @@
-"""GitHub Webhook Plugin configuration management."""
+"""Plugin settings, including defaults for existing installations."""
 
-from __future__ import annotations
+import re
 
-from collections.abc import MutableMapping
-from typing import Any, get_type_hints
-
-from astrbot.api import AstrBotConfig, logger
+from astrbot.api import logger
 
 
-class ConfigNode:
-    """配置节点: dict → 强类型属性访问（极简版）"""
+class PluginConfig:
+    def __init__(self, config):
+        self.port = int(config.get("port", 8080))
+        self.target_umo = config.get("target_umo", "").strip()
+        self.webhook_secret = config.get("webhook_secret", "")
+        self.rate_limit = int(config.get("rate_limit", 10))
+        self.push_mode = config.get("push_mode", "Markdown 推送")
+        self.llm_timeout_fallback_md = config.get("llm_timeout_fallback_md", True)
+        self.qq_mention_openid = config.get("qq_mention_openid", "").strip()
+        self.llm_provider_id = config.get("llm_provider_id", "")
+        self.agent_timeout = int(config.get("agent_timeout", 60))
+        self.agent_system_prompt = config.get("agent_system_prompt", "")
 
-    _SCHEMA_CACHE: dict[type, dict[str, type]] = {}
+        if self.push_mode not in {"原生文本", "Markdown 推送", "LLM 改写"}:
+            raise ValueError("push_mode must select exactly one supported mode")
 
-    @classmethod
-    def _schema(cls) -> dict[str, type]:
-        return cls._SCHEMA_CACHE.setdefault(cls, get_type_hints(cls))
+        if self.qq_mention_openid and not re.fullmatch(
+            r"[A-Za-z0-9_-]+", self.qq_mention_openid
+        ):
+            raise ValueError("qq_mention_openid must be an OpenID, not an @ tag")
 
-    def __init__(self, data: MutableMapping[str, Any]):
-        object.__setattr__(self, "_data", data)
-        for key in self._schema():
-            if key in data:
-                continue
-            if hasattr(self.__class__, key):
-                continue
-            logger.warning(f"[config:{self.__class__.__name__}] 缺少字段: {key}")
-
-    def __getattr__(self, key: str) -> Any:
-        if key in self._schema():
-            return self._data.get(key)
-        raise AttributeError(key)
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        if key in self._schema():
-            self._data[key] = value
-            return
-        object.__setattr__(self, key, value)
-
-
-class PluginConfig(ConfigNode):
-    """插件自定义配置"""
-
-    port: int
-    target_umo: str
-    webhook_secret: str
-    rate_limit: int
-    enable_agent: bool
-    llm_provider_id: str
-    agent_timeout: int
-    agent_system_prompt: str
-
-    def __init__(self, cfg: AstrBotConfig):
-        super().__init__(cfg)
-        # 配置验证和完整日志
-        logger.info("=" * 60)
-        logger.info("GitHub Webhook: Configuration loaded")
-        logger.info(f"  target_umo: {self.target_umo}")
-        logger.info(f"  enable_agent: {self.enable_agent}")
-        logger.info(f"  llm_provider_id: {self.llm_provider_id or '(default)'}")
-        logger.info(f"  agent_timeout: {self.agent_timeout}s")
-        logger.info(
-            f"  agent_system_prompt: {len(self.agent_system_prompt) if self.agent_system_prompt else 0} chars"
-        )
-        logger.info(f"  rate_limit: {self.rate_limit} req/min")
-        logger.info("=" * 60)
-
-        if not self.target_umo:
-            logger.warning(
-                "GitHub Webhook: target_umo not configured, plugin may not work!"
+        if not 0 <= self.port <= 65535:
+            raise ValueError("port must be between 0 and 65535")
+        if self.rate_limit < 0 or self.agent_timeout <= 0:
+            raise ValueError(
+                "rate_limit must be nonnegative and agent_timeout positive"
             )
-
-        if self.webhook_secret:
-            logger.info("GitHub Webhook: Signature verification enabled")
+        if self.target_umo:
+            parts = self.target_umo.split(":", 2)
+            if len(parts) != 3 or not all(parts):
+                raise ValueError("target_umo must be the complete unified_msg_origin")
         else:
-            logger.warning(
-                "GitHub Webhook: No webhook_secret configured, "
-                "signature verification disabled (not recommended for production)"
-            )
-
-        if self.rate_limit > 0:
-            logger.info(
-                f"GitHub Webhook: Rate limiting enabled "
-                f"({self.rate_limit} requests/minute)"
-            )
-
-        # LLM 配置日志
-        if self.enable_agent:
-            logger.info("GitHub Webhook: LLM mode enabled")
-            if self.llm_provider_id:
-                logger.info(
-                    f"GitHub Webhook: Using LLM provider ID: {self.llm_provider_id}"
-                )
-            else:
-                logger.info("GitHub Webhook: Using default LLM provider")
-            if self.agent_system_prompt:
-                logger.info("GitHub Webhook: Custom system prompt configured")
-        else:
-            logger.info("GitHub Webhook: LLM mode disabled, using default templates")
+            logger.warning("GitHub Webhook: target_umo is not configured")
+        if not self.webhook_secret:
+            logger.warning("GitHub Webhook: signature verification is disabled")

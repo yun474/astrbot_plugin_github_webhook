@@ -122,10 +122,10 @@ GitHub 在配置 Webhook 时会自动发送 Ping 事件，插件会自动响应�
 
 ### 使用 LLM 生成
 
-配置 `enable_agent = true` 后，插件会使用 LLM 生成个性化消息。
+配置 `push_mode = "LLM 改写"` 后，插件会使用 LLM 生成个性化消息。
 
 1. 在 AstrBot WebUI 中配置好 LLM Provider
-2. 在插件配置中启用 `enable_agent`
+2. 在插件配置中将 `push_mode` 选择为“LLM 改写”
 3. （可选）配置 `agent_system_prompt` 自定义消息风格
 4. （可选）配置 `llm_provider_id` 指定使用的模型
 

@@ -104,7 +104,7 @@ src/handlers/*.py: handle_xxx_event()
     ↓
 src/formatters/*.py: format_xxx_message()
     ↓
-src/core/plugin.py: send_message() 或 send_with_agent()
+src/core/plugin.py: 入队后由 _process_queue() 调用 generate_message() / send_message()
     ↓ (如果启用 LLM: src/services/llm_service.py)
     ↓
 聊天平台 (QQ/微信等)
@@ -123,7 +123,7 @@ from .plugin import GitHubWebhookPlugin
 from ..handlers.issues_handler import handle_issues_event
 from ..formatters.push_formatter import format_push_message
 from ..utils.rate_limiter import RateLimiter
-from ..services.llm_service import send_with_agent
+from ..services.llm_service import generate_message
 ```
 
 ### 绝对导入（AstrBot API）
